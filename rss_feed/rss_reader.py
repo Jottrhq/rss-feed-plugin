@@ -9,20 +9,27 @@ import requests
 from feed_manager_dialog import FeedManagerDialog
 from translation_manager import _
 
+# Former defaults that no longer resolve or return usable feed content.
+_REMOVED_DEFAULT_FEED_URLS = {
+    "https://feeds.reuters.com/reuters/topNews",
+    "https://apnews.com/feed",
+    "https://apnews.com/hub/world-news/feed",
+    "https://apnews.com/hub/middle-east/feed",
+}
+
+
 class RSSReader(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.feeds = {
             "BBC World": "https://feeds.bbci.co.uk/news/world/rss.xml",
-            "Reuters Top News": "https://feeds.reuters.com/reuters/topNews",
             "Al Jazeera": "https://www.aljazeera.com/xml/rss/all.xml",
             "CNN Top Stories": "http://rss.cnn.com/rss/edition.rss",
-            # AP News feeds
-            "AP Top News": "https://apnews.com/feed",
-            "AP World News": "https://apnews.com/hub/world-news/feed",
-            "AP Middle East": "https://apnews.com/hub/middle-east/feed"
         }
-        self.feed_file = "rss_feeds.json"
+        config_home = os.environ.get("XDG_CONFIG_HOME", os.path.expanduser("~/.config"))
+        config_dir = os.path.join(config_home, "Jottr")
+        os.makedirs(config_dir, exist_ok=True)
+        self.feed_file = os.path.join(config_dir, "rss_feeds.json")
         self.setup_ui()
         self.load_feeds()
         
@@ -71,14 +78,27 @@ class RSSReader(QWidget):
         layout.setStretch(2, 2)
         
     def load_feeds(self):
+        # Migrate feeds previously saved relative to the process cwd.
+        legacy_feed_file = "rss_feeds.json"
+        sources = []
         if os.path.exists(self.feed_file):
+            sources.append(self.feed_file)
+        if os.path.abspath(legacy_feed_file) != os.path.abspath(self.feed_file) and os.path.exists(legacy_feed_file):
+            sources.append(legacy_feed_file)
+
+        for path in sources:
             try:
-                with open(self.feed_file, 'r') as f:
+                with open(path, 'r') as f:
                     loaded_feeds = json.load(f)
                     self.feeds.update(loaded_feeds)  # Merge with default feeds
-            except:
+            except Exception:
                 pass  # Keep default feeds if file load fails
-        
+
+        self.feeds = {
+            title: url for title, url in self.feeds.items()
+            if url not in _REMOVED_DEFAULT_FEED_URLS
+        }
+
         self.save_feeds()  # Save combined feeds
         self.update_feed_selector()
         
