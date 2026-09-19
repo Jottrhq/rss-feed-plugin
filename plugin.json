@@ -1,7 +1,7 @@
 {
   "name": "rss-feed",
   "displayName": "RSS Feed Reader",
-  "version": "0.3.1",
+  "version": "0.3.2",
   "description": "Adds the RSS feed reader tab.",
   "entry": "index.py",
   "permissions": [

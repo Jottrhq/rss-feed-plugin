@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.3.2](https://github.com/Jottrhq/rss-feed-plugin/compare/rss-feed-v0.3.1...rss-feed-v0.3.2) (2026-09-19)
+
+
+### Bug Fixes
+
+* import translations from the jottr package ([867fafd](https://github.com/Jottrhq/rss-feed-plugin/commit/867fafddbc5b2a7f56b6bb1ac113a56e086832c9))
+* import translations from the jottr package ([8756abb](https://github.com/Jottrhq/rss-feed-plugin/commit/8756abb76e1ffb8f8926cfd25eea0ce8504534b3))
+
 ## [0.3.1](https://github.com/Jottrhq/rss-feed-plugin/compare/rss-feed-v0.3.0...rss-feed-v0.3.1) (2026-05-29)
 
 
