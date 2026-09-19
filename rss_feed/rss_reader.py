@@ -7,7 +7,10 @@ import json
 import os
 import requests
 from feed_manager_dialog import FeedManagerDialog
-from translation_manager import _
+try:
+    from jottr.translation_manager import _
+except ImportError:  # Jottr before the src/jottr package layout
+    from translation_manager import _
 
 # Former defaults that no longer resolve or return usable feed content.
 _REMOVED_DEFAULT_FEED_URLS = {
