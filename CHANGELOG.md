@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.3.3](https://github.com/Jottrhq/rss-feed-plugin/compare/rss-feed-v0.3.2...rss-feed-v0.3.3) (2026-09-28)
+
+
+### Bug Fixes
+
+* refresh the selected feed automatically ([3e7ed47](https://github.com/Jottrhq/rss-feed-plugin/commit/3e7ed4795049ddf2b1892c330680a794631482b6))
+* use the host's rss icon for the toolbar button ([ef8a933](https://github.com/Jottrhq/rss-feed-plugin/commit/ef8a933d2fc0efb28f1b3710eb23c7aa519935f2))
+* use the host's rss icon for the toolbar button ([3268ca9](https://github.com/Jottrhq/rss-feed-plugin/commit/3268ca9a4350114170ed638063aae18350ee85c8))
+
 ## [0.3.2](https://github.com/Jottrhq/rss-feed-plugin/compare/rss-feed-v0.3.1...rss-feed-v0.3.2) (2026-09-19)
 
 
