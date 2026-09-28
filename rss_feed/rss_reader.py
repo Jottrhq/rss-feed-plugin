@@ -1,11 +1,12 @@
 from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QListWidget, 
                             QTextBrowser, QPushButton, QInputDialog, QMessageBox,
                             QComboBox, QListWidgetItem, QDialog)
-from PyQt6.QtCore import Qt, QUrl
+from PyQt6.QtCore import Qt, QUrl, pyqtSignal
 import feedparser
 import json
 import os
 import requests
+import threading
 from feed_manager_dialog import FeedManagerDialog
 try:
     from jottr.translation_manager import _
@@ -21,9 +22,37 @@ _REMOVED_DEFAULT_FEED_URLS = {
 }
 
 
+# Enhanced headers especially for RSSHub
+_FEED_HEADERS = {
+    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+    'Accept': 'application/rss+xml, application/xml, application/json, */*',
+    'Accept-Language': 'en-US,en;q=0.9',
+    'Cache-Control': 'no-cache',
+    'Pragma': 'no-cache',
+    'Connection': 'keep-alive'
+}
+
+
+def fetch_feed(url):
+    # Special handling for RSSHub
+    if 'rsshub.app' in url:
+        # Try direct feedparser first
+        feed = feedparser.parse(url)
+        if hasattr(feed, 'entries') and feed.entries:
+            return feed
+    response = requests.get(url, timeout=10, headers=_FEED_HEADERS)
+    response.raise_for_status()
+    return feedparser.parse(response.text)
+
+
 class RSSReader(QWidget):
+    # (request id, feed title, parsed feed or None, exception or None)
+    feed_fetched = pyqtSignal(int, str, object, object)
+
     def __init__(self, parent=None):
         super().__init__(parent)
+        self._fetch_id = 0
+        self.feed_fetched.connect(self.on_feed_fetched)
         self.feeds = {
             "BBC World": "https://feeds.bbci.co.uk/news/world/rss.xml",
             "Al Jazeera": "https://www.aljazeera.com/xml/rss/all.xml",
@@ -109,75 +138,75 @@ class RSSReader(QWidget):
         with open(self.feed_file, 'w') as f:
             json.dump(self.feeds, f)
             
-    def update_feed_selector(self):
+    def update_feed_selector(self, select=None):
+        selected = select or self.feed_selector.currentText()
+        self.feed_selector.blockSignals(True)
         self.feed_selector.clear()
         self.feed_selector.addItems(sorted(self.feeds.keys()))
-        
+        index = self.feed_selector.findText(selected)
+        if index >= 0:
+            self.feed_selector.setCurrentIndex(index)
+        self.feed_selector.blockSignals(False)
+        self.refresh_current_feed()
+
     def on_feed_selected(self, feed_title):
-        # Don't automatically refresh when feed is selected
-        pass
-        
+        self.refresh_current_feed()
+
     def refresh_current_feed(self):
+        self._fetch_id += 1
         self.entries_list.clear()
         self.content_viewer.clear()
-        
+
         feed_title = self.feed_selector.currentText()
         if not feed_title or feed_title not in self.feeds:
             return
-            
-        url = self.feeds[feed_title]
+
+        self.content_viewer.setPlainText(_("Loading {feed_title}...").format(feed_title=feed_title))
+        threading.Thread(
+            target=self._fetch_in_background,
+            args=(self._fetch_id, feed_title, self.feeds[feed_title]),
+            daemon=True,
+        ).start()
+
+    def _fetch_in_background(self, fetch_id, feed_title, url):
+        feed, error = None, None
         try:
-            # Enhanced headers especially for RSSHub
-            headers = {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-                'Accept': 'application/rss+xml, application/xml, application/json, */*',
-                'Accept-Language': 'en-US,en;q=0.9',
-                'Cache-Control': 'no-cache',
-                'Pragma': 'no-cache',
-                'Connection': 'keep-alive'
-            }
-            
-            # Special handling for RSSHub
-            if 'rsshub.app' in url:
-                # Try direct feedparser first
-                feed = feedparser.parse(url)
-                if not hasattr(feed, 'entries') or not feed.entries:
-                    # If direct parsing fails, try with requests
-                    response = requests.get(url, timeout=10, headers=headers)
-                    response.raise_for_status()
-                    feed = feedparser.parse(response.text)
-            else:
-                # Normal handling for other feeds
-                response = requests.get(url, timeout=10, headers=headers)
-                response.raise_for_status()
-                feed = feedparser.parse(response.text)
-            
-            if hasattr(feed, 'entries') and feed.entries:
-                for entry in feed.entries:
-                    item_text = entry.title if hasattr(entry, 'title') else 'No Title'
-                    list_item = QListWidgetItem(item_text)
-                    list_item.setData(Qt.ItemDataRole.UserRole, entry)
-                    self.entries_list.addItem(list_item)
-            else:
-                print(f"Feed {feed_title} has no entries. Feed status: {feed.get('status', 'unknown')}")
-                print(f"Feed bozo: {feed.get('bozo', 'unknown')}")
-                if hasattr(feed, 'debug_message'):
-                    print(f"Feed debug: {feed.debug_message}")
-                QMessageBox.warning(self, _("Error"), _("No entries found in feed: {feed_title}").format(feed_title=feed_title))
-            
-        except requests.exceptions.HTTPError as e:
-            if e.response.status_code == 429:
-                print(f"Rate limit headers: {e.response.headers}")  # Debug rate limit info
-                QMessageBox.warning(self, _("Error"),
-                                  _("Rate limit exceeded for {feed_title}. Please try again later.").format(feed_title=feed_title))
-            else:
-                QMessageBox.warning(self, _("Error"),
-                                  _("Could not fetch feed {feed_title}: {error}").format(feed_title=feed_title, error=str(e)))
+            feed = fetch_feed(url)
         except Exception as e:
-            print(f"Error fetching feed {feed_title}: {str(e)}")
-            QMessageBox.warning(self, _("Error"),
-                              _("Could not fetch feed {feed_title}: {error}").format(feed_title=feed_title, error=str(e)))
-            
+            error = e
+        try:
+            self.feed_fetched.emit(fetch_id, feed_title, feed, error)
+        except RuntimeError:
+            pass  # The reader was closed while the feed was loading
+
+    def on_feed_fetched(self, fetch_id, feed_title, feed, error):
+        if fetch_id != self._fetch_id:
+            return  # A newer selection or refresh superseded this fetch
+        self.content_viewer.clear()
+
+        if error is not None:
+            if isinstance(error, requests.exceptions.HTTPError) and error.response.status_code == 429:
+                print(f"Rate limit headers: {error.response.headers}")  # Debug rate limit info
+                message = _("Rate limit exceeded for {feed_title}. Please try again later.").format(feed_title=feed_title)
+            else:
+                print(f"Error fetching feed {feed_title}: {str(error)}")
+                message = _("Could not fetch feed {feed_title}: {error}").format(feed_title=feed_title, error=str(error))
+            self.content_viewer.setPlainText(message)
+            return
+
+        if hasattr(feed, 'entries') and feed.entries:
+            for entry in feed.entries:
+                item_text = entry.title if hasattr(entry, 'title') else 'No Title'
+                list_item = QListWidgetItem(item_text)
+                list_item.setData(Qt.ItemDataRole.UserRole, entry)
+                self.entries_list.addItem(list_item)
+        else:
+            print(f"Feed {feed_title} has no entries. Feed status: {feed.get('status', 'unknown')}")
+            print(f"Feed bozo: {feed.get('bozo', 'unknown')}")
+            if hasattr(feed, 'debug_message'):
+                print(f"Feed debug: {feed.debug_message}")
+            self.content_viewer.setPlainText(_("No entries found in feed: {feed_title}").format(feed_title=feed_title))
+
     def refresh_feeds(self):
         self.refresh_current_feed()
             
@@ -194,8 +223,7 @@ class RSSReader(QWidget):
                     if hasattr(feed, 'entries') and feed.entries:
                         self.feeds[title] = url
                         self.save_feeds()
-                        self.update_feed_selector()
-                        self.feed_selector.setCurrentText(title)
+                        self.update_feed_selector(select=title)
                     else:
                         QMessageBox.warning(self, _("Error"), _("Invalid RSS feed"))
                 except Exception as e:
@@ -211,7 +239,6 @@ class RSSReader(QWidget):
                 del self.feeds[current_feed]
                 self.save_feeds()
                 self.update_feed_selector()
-                self.refresh_current_feed()
                 
     def show_entry(self, current, previous):
         if current:
@@ -231,4 +258,3 @@ class RSSReader(QWidget):
             self.feeds = dialog.get_feeds()
             self.save_feeds()
             self.update_feed_selector()
-            self.refresh_current_feed()
