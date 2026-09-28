@@ -29,7 +29,7 @@
         "id": "rss-feed.toolbar",
         "title": "RSS",
         "tooltip": "Open RSS Reader",
-        "icon": "globe",
+        "icon": "rss",
         "panel": "rss-feed.reader"
       }
     ]
